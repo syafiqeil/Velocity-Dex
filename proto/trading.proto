@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package trading;
+
+// Service Definition
+service TradingEngine {
+  // 1. Place Order (Unary Call - Cepat & Sederhana)
+  // Mengirim satu order, menunggu konfirmasi engine (bukan konfirmasi match, tapi konfirmasi diterima)
+  rpc PlaceLimitOrder (PlaceOrderRequest) returns (PlaceOrderResponse);
+
+  // 2. Cancel Order
+  rpc CancelOrder (CancelOrderRequest) returns (CancelOrderResponse);
+
+  // 3. Get Orderbook Depth (Snapshot)
+  // Mengambil state pasar saat ini (Top N Bids/Asks)
+  rpc GetOrderBookDepth (DepthRequest) returns (DepthResponse);
+}
+
+// =============================================================
+// Data Structures
+// =============================================================
+
+// Enum untuk Side (Jual/Beli)
+enum Side {
+  SIDE_UNSPECIFIED = 0; // Protobuf best practice: enum 0 selalu 'unknown'
+  SIDE_BID = 1;         // Beli
+  SIDE_ASK = 2;         // Jual
+}
+
+// Request untuk menaruh order
+message PlaceOrderRequest {
+  uint64 user_id = 1;
+  uint64 order_id = 2;   // ID unik yang digenerate oleh Client/API Gateway (Idempotency key)
+  Side side = 3;
+  uint64 price = 4;      // Atomic units (Satoshi/Wei)
+  uint64 quantity = 5;   // Atomic units
+}
+
+// Response dari engine
+message PlaceOrderResponse {
+  bool success = 1;
+  string message = 2;    // "Order Accepted", "Insufficient Balance", etc.
+  
+  // Opsional: Langsung mengembalikan status jika terjadi instant match
+  // (Tapi untuk performa ultra-tinggi, biasanya hasil match dikirim via stream terpisah)
+  repeated TradeExecution fills = 3; 
+}
+
+message CancelOrderRequest {
+  uint64 user_id = 1;
+  uint64 order_id = 2;
+}
+
+message CancelOrderResponse {
+  bool success = 1;
+  uint64 remaining_qty = 2; // Sisa quantity yang dicancel
+}
+
+message DepthRequest {
+  string symbol = 1; // e.g., "SOL_USDC" (Jika nanti support multi-pair)
+  uint32 limit = 2;  // Berapa level kedalaman (e.g., Top 10)
+}
+
+message DepthResponse {
+  repeated OrderLevel bids = 1;
+  repeated OrderLevel asks = 2;
+  uint64 sequence_id = 3; // Untuk memastikan klien menerima data urut
+}
+
+// Struktur helper
+message OrderLevel {
+  uint64 price = 1;
+  uint64 total_quantity = 2; // Total volume di harga ini
+}
+
+message TradeExecution {
+  uint64 maker_order_id = 1;
+  uint64 price = 2;
+  uint64 quantity = 3;
+}

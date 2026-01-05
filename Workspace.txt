@@ -1,0 +1,10 @@
+velocity-dex/
+├── Cargo.toml              # Workspace definition
+├── crates/
+│   ├── api-server/         # Network Ingress (gRPC/WS)
+│   ├── engine-core/        # Pure Logic: Orderbook & Matching (No IO)
+│   ├── event-bus/          # Internal messaging (Ring Buffer)
+│   ├── storage/            # Append-only Log (WAL) & Snapshotting
+│   └── common/             # Shared Types (Order, Side, Trade)
+└── bin/
+    └── velocity-node/      # Main entry point
