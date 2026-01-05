@@ -1,1 +1,0 @@
-{"rustc":12013579709055016942,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[7477820864485191652,"build_script_build",false,14940389107100901414]],"local":[{"RerunIfChanged":{"output":"debug/build/trading-cli-de3656d8c3173a94/output","paths":["../../proto/trading.proto","../../proto"]}}],"rustflags":[],"config":0,"compile_kind":0}
