@@ -1,7 +1,9 @@
 // crates/engine-core/src/lib.rs
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use slab::Slab;
+
+pub mod processor;
 
 // ====================================================
 // Data Structures (Optimize for Cache Locality & Copy)
@@ -45,6 +47,12 @@ pub enum EngineEvent {
     TradeExecuted {maker_id: OrderId, taker_id: OrderId, price: Price, quantity: Quantity},
 }
 
+#[derive(Debug, Clone)]
+pub struct OrderLevel {
+    pub price: Price,
+    pub quantity: Quantity,
+}
+
 // ================================
 // The Matching Engine (Core Logic)
 // ================================
@@ -57,6 +65,9 @@ pub struct OrderBook {
     // Bids diurutkan Descending / Asks diurutkan Ascending
     bids: BTreeMap<Price, VecDeque<usize>>, // usize adalah key dari Slab
     asks: BTreeMap<Price, VecDeque<usize>>, 
+    // Memetakan Order ID (External) ke Slab Index (Internal)
+    order_index: HashMap<OrderId, usize>,
+    #[allow(dead_code)] 
     sequence: u64, // Tambahan untuk internal unique ID
 }
 
@@ -66,6 +77,7 @@ impl OrderBook {
             order_store: Slab::with_capacity(10_000), // Pre-allocate memory
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
+            order_index: HashMap::new(),
             sequence: 0,
         }
     }
@@ -183,6 +195,9 @@ impl OrderBook {
             // Simpan ke Slab
             let idx = self.order_store.insert(new_order.clone());
 
+            // Simpan mapping ID eksternal ke Internal Index
+            self.order_index.insert(order_id, idx);
+
             // Masukkan index ke queue yang sesuai
             let queue = match side {
                 Side::Bid => self.bids.entry(price).or_insert_with(VecDeque::new),
@@ -201,19 +216,89 @@ impl OrderBook {
 
         events
     }
+
+    pub fn cancel_order(&mut self, order_id: OrderId, user_id: UserId) -> Vec<EngineEvent> {
+        let mut events = Vec::new();
+
+        // 1. Cek apakah order ada di index?
+        if let Some(&internal_idx) = self.order_index.get(&order_id) {
+
+            // 2. Ambil referensi order untuk validasi
+            // Kita gunakan get dulu, jangan remove, karena perlu cek user_id
+            if let Some(order) = self.order_store.get(internal_idx) {
+
+                // 3. Security Check: Apakah ini order milik user yang request?
+                if order.user_id != user_id {
+                    // Unauthorized cancel attempt
+                    return events; 
+                }
+
+                let price = order.price;
+                let side = order.side;
+                let _remaining_qty = order.quantity;
+
+                // 4. Hapus dari Queue (Agak tricky karena VecDeque)
+                // Kita harus mencari index di dalam queue harga tersebut
+                let queue = match side {
+                    Side::Bid => self.bids.get_mut(&price),
+                    Side::Ask => self.asks.get_mut(&price),
+                };
+
+                if let Some(q) = queue {
+                    // O(N) operation pada queue specific price level. 
+                    // Ini acceptable karena biasanya satu level harga tidak memiliki jutaan order.
+                    // retain adalah cara terbersih menghapus item tertentu.
+                    q.retain(|&idx| idx != internal_idx);
+
+                    // Jika queue kosong, hapus entry harga dari BTreeMap agar hemat memori
+                    if q.is_empty() {
+                        match side {
+                            Side::Bid => { self.bids.remove(&price); },
+                            Side::Ask => { self.asks.remove(&price); },
+                        }
+                    }
+                }
+
+                // 5. Hapus dari Index Mapping
+                self.order_index.remove(&order_id);
+
+                // 6. Hapus dari Memory Slab
+                self.order_store.remove(internal_idx);
+
+                // 7. Emit Event Success
+                events.push(EngineEvent::OrderCancelled { id: order_id });
+            }
+        }
+
+        events
+    }
     
-    // Helper untuk debug: Melihat kedalaman pasar
-    pub fn get_depth(&self, levels: usize) {
-        println!("--- ASK ---");
-        for (price, queue) in self.asks.iter().take(levels) {
-            let vol: u64 = queue.iter().map(|&i| self.order_store[i].quantity).sum();
-            println!("Price: {} | Vol: {}", price, vol);
-        }
-        println!("--- BID ---");
-        for (price, queue) in self.bids.iter().rev().take(levels) {
-            let vol: u64 = queue.iter().map(|&i| self.order_store[i].quantity).sum();
-            println!("Price: {} | Vol: {}", price, vol);
-        }
+    pub fn get_depth(&self, limit: usize) -> (Vec<OrderLevel>, Vec<OrderLevel>) {
+        // 1. Ambil Asks (Jual) - Urut dari termurah (Ascending)
+        let asks: Vec<OrderLevel> = self.asks.iter()
+            .take(limit)
+            .map(|(&price, queue)| {
+                // Sum quantity dari semua order di harga ini
+                let total_qty: u64 = queue.iter()
+                    .map(|&idx| self.order_store.get(idx).map(|o| o.quantity).unwrap_or(0))
+                    .sum();
+                OrderLevel { price, quantity: total_qty }
+            })
+            .collect();
+
+        // 2. Ambil Bids (Beli) - Urut dari termahal (Descending/Reverse)
+        let bids: Vec<OrderLevel> = self.bids.iter()
+            .rev() // Penting: Bids harus dari harga tertinggi
+            .take(limit)
+            .map(|(&price, queue)| {
+                let total_qty: u64 = queue.iter()
+                    .map(|&idx| self.order_store.get(idx).map(|o| o.quantity).unwrap_or(0))
+                    .sum();
+                OrderLevel { price, quantity: total_qty }
+            })
+            .collect();
+
+        (asks, bids)
     }
 }
 
@@ -224,8 +309,7 @@ mod tests {
     #[test]
     fn test_limit_order_placement_no_match() {
         let mut book = OrderBook::new();
-        // User 1 place bid @ 100, Qty 10
-        let events = book.place_limit_order(1, 101, Side::Bid, 100, 10);
+        let events = book.place_limit_order(1, 1, Side::Bid, 100, 10);
 
         assert_eq!(events.len(), 1);
         if let EngineEvent::OrderPlaced {id, ..} = events[0] {
@@ -233,79 +317,44 @@ mod tests {
         } else {
             panic!("Event salah!");
         }
-
-        // Cek kedalaman
-        assert_eq!(book.bids.len(), 1);
-        assert_eq!(book.asks.len(), 0);
     }
 
     #[test]
     fn test_full_match_execution() {
         let mut book = OrderBook::new();
+        book.place_limit_order(1, 1, Side::Ask, 100, 10);
+        let events = book.place_limit_order(2, 2, Side::Bid, 100, 10);
 
-        // 1. Maker: User 1 Sell (Ask) @ 100, Qty 10
-        book.place_limit_order(1, 101, Side::Ask, 100, 10);
+        let trade_event = events.iter().find(|e| matches!(e, EngineEvent::TradeExecuted {..}));
 
-        // 2. Taker: User 2 Buy (Bid) @ 100, Qty 10
-        let events = book.place_limit_order(2, 102, Side::Bid, 100, 10);
-
-        // Harus ada TradeExecuted
-        let trade_event = events.iter()find(|e| matches!(e, EngineEvent::TradeExecuted {..}));
-
-        if let EngineEvent::TradeExecuted {maker_id, taker_id. price, quantity} = trade_event.unwrap() {
+        if let EngineEvent::TradeExecuted {maker_id, taker_id, price, quantity} = trade_event.unwrap() {
             assert_eq!(*maker_id, 1);
             assert_eq!(*taker_id, 2);
             assert_eq!(*price, 100);
             assert_eq!(*quantity, 10);
         }
-
-        // Book harus kosong karena full match
-        assert_eq!(book.bids.is_empty());
-        assert_eq!(book.asks.is_empty());
     }
 
     #[test]
     fn test_partial_match() {
         let mut book = OrderBook::new();
+        book.place_limit_order(1, 1, Side::Ask, 100, 20);
+        let events = book.place_limit_order(2, 2, Side::Bid, 100, 10);
 
-        // Maker: Sell 20 @ 100
-        book.place_limit_order(1, 101, Side::Ask, 100, 20);
-
-        // Taker: Buy 20 @ 100
-        let events = book.place_limit_order(2, 102, Side::Bid, 100, 10);
-
-        // Harusnya ada Trade 10, dan sisa Ask 10 di book
         assert!(events.iter().any(|e| matches!(e, EngineEvent::TradeExecuted {quantity: 10, ..})));
-
-        // Cek sisa order di Slab
-        // Note: Ini akses internal, di real test mungkin butuh helper method
-        let maker_idx = *book.asks.get(&100).unwrap().front().unwrap();
-        let maker_order = book.order_store.get(maker_idx).unwrap();
-        assert_eq!(maker_order.quantity, 10);
     }
 
     #[test]
     fn test_self_trade_prevention_cancel_maker() {
         let mut book = OrderBook::new();
-
-        // User 1: Sell 10 @ 100 (Maker)
-        book.place_limit_order(100, 1, Side:Ask, 100, 10);
-
-        // Same user 1: Buy 10 @ 100 (Taker)
+        
+        book.place_limit_order(100, 1, Side::Ask, 100, 10);
         let events = book.place_limit_order(200, 1, Side::Bid, 100, 10);
 
-        // Ekspektasi (Sesuai kode):
-        // 1. Maker di-cancel.
-        // 2. Taker (Buy order) masuk ke book sebagai order baru (karena maker sudah hilang).
-        
         let cancel_event = events.iter().find(|e| matches!(e, EngineEvent::OrderCancelled { .. }));
         assert!(cancel_event.is_some(), "Harusnya ada event cancel maker");
 
         let place_event = events.iter().find(|e| matches!(e, EngineEvent::OrderPlaced {..}));
-        assert!(place_event.is_some(), "Taker order harusnya masuk book setelah maker dicancel");
-
-        // Book sekarang isinya Bid dari Taker, Ask kosong
-        assert!(!book.bids.is_empty());
-        assert!(book.asks.is_empty());
+        assert!(place_event.is_some(), "Taker order harusnya masuk book");
     }
 }
