@@ -7,3 +7,4 @@ edition = "2021"
 slab = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
+bincode = { workspace = true }

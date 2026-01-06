@@ -1,9 +1,11 @@
 // crates/engine-core/src/lib.rs
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use serde::{Serialize, Deserialize};
 use slab::Slab;
 
 pub mod processor;
+pub mod wal;
 
 // ====================================================
 // Data Structures (Optimize for Cache Locality & Copy)
@@ -13,7 +15,7 @@ pub type UserId = u64;
 pub type Price = u64; // Menggunakan atomic units (misal: satoshi) untuk menghindari Floating Point errors
 pub type Quantity = u64;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Side {
     Bid,
     Ask,
@@ -28,8 +30,7 @@ impl Side {
     }
 }
 
-// Order struct dibuat "Copy" jika memungkinkan, atau sangat ringan untuk di clone.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Order {
     pub id: OrderId,
     pub user_id: UserId,
@@ -39,12 +40,24 @@ pub struct Order {
     pub timestamp: u64,
 }
 
-// Event yang dipancarkan engine *Penting untuk decoupling engine dari database/network.
 #[derive(Debug, Clone)]
 pub enum EngineEvent {
-    OrderPlaced {id: OrderId, user_id: UserId, price: Price, quantity:Quantity, side: Side},
-    OrderCancelled {id: OrderId},
-    TradeExecuted {maker_id: OrderId, taker_id: OrderId, price: Price, quantity: Quantity},
+    OrderPlaced {
+        id: OrderId, 
+        user_id: UserId, 
+        price: Price, 
+        quantity: Quantity, 
+        side: Side
+    },
+    OrderCancelled {
+        id: OrderId
+    },
+    TradeExecuted {
+        maker_id: OrderId, 
+        taker_id: OrderId, 
+        price: Price, 
+        quantity: Quantity
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +66,20 @@ pub struct OrderLevel {
     pub quantity: Quantity,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum LogEntry {
+    Place {
+        order_id: OrderId,
+        user_id: UserId,
+        side: Side,
+        price: Price,
+        quantity: Quantity,
+    },
+    Cancel {
+        order_id: OrderId,
+        user_id: UserId,
+    }
+}
 // ================================
 // The Matching Engine (Core Logic)
 // ================================
