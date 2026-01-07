@@ -57,10 +57,8 @@ velocity-dex/
 │   └── bench-tool/       # The Hammer: Load testing tool for performance metrics.
 └── proto/                # Shared Protobuf definitions.
 
-
 ### The Actor Model
 Velocity uses `tokio::sync::mpsc` channels to funnel concurrent requests into a single-threaded **MarketProcessor**. This eliminates the need for complex Mutex locking on the orderbook, ensuring deterministic execution and reducing thread contention.
-
 
 ## Getting Started
 
