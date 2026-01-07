@@ -48,14 +48,15 @@ Velocity DEX was stress-tested using a custom load generation tool (`crates/benc
 
 
 ## Architecture
+The system is organized as a Cargo Workspace with modular crates:
 
-velocity-dex/
-├── crates/
-│   ├── engine-core/      # The Brain: Pure matching logic, Orderbook struct, WAL handler.
-│   ├── api-server/       # The Mouth: gRPC server (Port 50051) & WebSocket server (Port 3000).
-│   ├── trading-cli/      # The Hand: Command-line interface for manual trading.
-│   └── bench-tool/       # The Hammer: Load testing tool for performance metrics.
-└── proto/                # Shared Protobuf definitions.
+    velocity-dex/
+    ├── crates/
+    │   ├── engine-core/      # The Brain: Pure matching logic, Orderbook struct, WAL handler.
+    │   ├── api-server/       # The Mouth: gRPC server (Port 50051) & WebSocket server (Port 3000).
+    │   ├── trading-cli/      # The Hand: Command-line interface for manual trading.
+    │   └── bench-tool/       # The Hammer: Load testing tool for performance metrics.
+    └── proto/                # Shared Protobuf definitions.
 
 ### The Actor Model
 Velocity uses `tokio::sync::mpsc` channels to funnel concurrent requests into a single-threaded **MarketProcessor**. This eliminates the need for complex Mutex locking on the orderbook, ensuring deterministic execution and reducing thread contention.
