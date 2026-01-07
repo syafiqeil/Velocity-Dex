@@ -31,7 +31,7 @@ impl WalHandler {
 
         // Untuk HFT murni, biasanya flush dilakukan per batch atau interval waktu.
         // Pada tahap ini, flush setiap kali demi keamanan data.
-        self.writer.flush()?;
+        // self.writer.flush()?;
 
         Ok(())
     }

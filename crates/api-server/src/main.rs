@@ -1,7 +1,6 @@
 // crates/api-server/src/main.rs
 
 use std::net::SocketAddr;
-use serde::Serialize;
 use tonic::{transport::Server, Request, Response, Status};
 use tokio::sync::{mpsc, oneshot, broadcast};
 use engine_core::processor::{MarketProcessor, Command};
@@ -18,7 +17,6 @@ use axum:: {
     routing::get,
     Router,
 };
-use futures::{sink::SinkExt, stream::StreamExt};
 
 pub mod trading {
     tonic::include_proto!("trading");
@@ -168,13 +166,6 @@ impl TradingEngine for TradingService {
             sequence_id: 0, // TODO: Implement sequence number nanti
         }))
     }
-}
-
-// Helper Struct untuk Serialisasi JSON ke WebSocket
-#[derive(Serialize)]
-struct WsEvent {
-    event_type: String,
-    data: serde_json::Value,
 }
 
 // Handler WebSocket

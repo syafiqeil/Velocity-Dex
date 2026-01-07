@@ -1,0 +1,15 @@
+[package]
+name = "bench-tool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tonic = { workspace = true }
+prost = { workspace = true }
+tokio = { workspace = true }
+rand = { workspace = true }
+clap = { workspace = true }
+hdrhistogram = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }
