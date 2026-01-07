@@ -116,3 +116,6 @@ To reproduce the performance metrics:
 5. Serialization: Serde & Bincode
 6. Memory: Slab (Arena allocation)
 7. Metrics: HdrHistogram
+
+## License
+This project is open-source and available under the MIT License.
