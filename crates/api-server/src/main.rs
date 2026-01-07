@@ -1,7 +1,9 @@
 // crates/api-server/src/main.rs
 
+use std::net::SocketAddr;
+use serde::Serialize;
 use tonic::{transport::Server, Request, Response, Status};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, broadcast};
 use engine_core::processor::{MarketProcessor, Command};
 use engine_core::{Side as EngineSide, EngineEvent};
 use trading::trading_engine_server::{TradingEngine, TradingEngineServer};
@@ -9,6 +11,14 @@ use trading:: {
     PlaceOrderRequest, PlaceOrderResponse, CancelOrderRequest, CancelOrderResponse, 
     DepthRequest, DepthResponse, OrderLevel as ProtoOrderLevel, TradeExecution, Side as ProtoSide
 };
+use axum:: {
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::State,
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
+use futures::{sink::SinkExt, stream::StreamExt};
 
 pub mod trading {
     tonic::include_proto!("trading");
@@ -160,18 +170,87 @@ impl TradingEngine for TradingService {
     }
 }
 
+// Helper Struct untuk Serialisasi JSON ke WebSocket
+#[derive(Serialize)]
+struct WsEvent {
+    event_type: String,
+    data: serde_json::Value,
+}
+
+// Handler WebSocket
+async fn ws_handler (
+    ws: WebSocketUpgrade,
+    State(broadcast_tx): State<broadcast::Sender<EngineEvent>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(|socket| handle_socket(socket, broadcast_tx))
+}
+
+async fn handle_socket(mut socket: WebSocket, broadcast_tx: broadcast::Sender<EngineEvent>) {
+    // Subcribe ke channel broadcast
+    let mut rx = broadcast_tx.subscribe();
+
+    while let Ok(event) = rx.recv().await {
+        // Konversi EngineEvent ke JSON
+        let json_msg = match event {
+            EngineEvent::TradeExecuted { maker_id, taker_id, price, quantity } => serde_json::json! ({
+                "type": "TRADE",
+                "maker_id": maker_id,
+                "taker_id": taker_id,
+                "price": price,
+                "quantity": quantity,
+            }),
+            EngineEvent::OrderPlaced { id, price, quantity, side, ..  } => serde_json::json! ({
+                "type": "ORDER_PLACED",
+                "id": id,
+                "price": price,
+                "quantity": quantity,
+                "side": format!("{:?}", side),
+            }),
+            EngineEvent::OrderCancelled { id } => serde_json::json! ({
+                "type": "ORDER_CANCELLED",
+                "id": id,
+            }),
+        };
+
+        // Kirim string JSON ke Client WebSocket
+        if let Ok(msg_text) = serde_json::to_string(&json_msg) {
+            if socket.send(Message::Text(msg_text)).await.is_err() {
+                break; // Client disconnect
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Setup Channel: Buffer 1024 command antrian
     let (tx, rx) = mpsc::channel(1024);
+    // Channel Broadcast: kapasitas 100 pesan. Jika client lambat, pesan lama didrop (lag).
+    let (broadcast_tx, _) = broadcast::channel(100);
 
     // 2. Spawn Market Processor (The Engine) di background thread
-    let processor = MarketProcessor::new(rx);
+    let processor_broadcast_tx = broadcast_tx.clone();
+    let processor = MarketProcessor::new(rx, processor_broadcast_tx);
     tokio::spawn(async move {
         processor.run().await;
     });
 
-    // 3. Setup gRPC Server
+    // 3. Setup WebSocket Server (Axum)
+    // Berjalan di port terpisah: 3000
+    let app = Router::new()
+        .route("/ws", get(ws_handler))
+        .with_state(broadcast_tx.clone());
+
+    let ws_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    println!(">>> WebSocket Market Data Server Listening on ws://127.0.0.1:3000/ws");
+
+    // Spawn Axum server di background task
+    tokio::spawn(async move {
+        let listener = tokio::net::TcpListener::bind(ws_addr).await.unwrap();
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    // 4. Setup gRPC Server (Main Task)
     let addr = "[::1]:50051".parse()?;
     let trading_service = TradingService {
         processor_sender: tx,

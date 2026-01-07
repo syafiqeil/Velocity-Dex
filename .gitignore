@@ -1,4 +1,4 @@
 /target/
 
-.lock
-.wal
+*.lock
+*.wal
