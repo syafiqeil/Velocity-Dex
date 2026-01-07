@@ -9,6 +9,8 @@
 
 Designed for low latency and high throughput, it utilizes the **Actor Model** to separate the synchronous matching logic from asynchronous network I/O. It supports high-frequency trading via **gRPC**, pushes real-time market data via **WebSockets**, and ensures data durability through an event-sourced **Write-Ahead-Log (WAL)**.
 
+---
+
 ## Key Features
 
 * **Ultra-Fast Matching Engine:**
@@ -30,6 +32,8 @@ Designed for low latency and high throughput, it utilizes the **Actor Model** to
     * **Self-Trade Prevention (STP):** Automatically prevents users from matching against their own orders.
     * Atomic state transitions ensures orderbook consistency.
 
+---
+
 ## Performance Benchmarks
 
 Velocity DEX was stress-tested using a custom load generation tool (`crates/bench-tool`).
@@ -46,6 +50,7 @@ Velocity DEX was stress-tested using a custom load generation tool (`crates/benc
 
 > *Note: These results are constrained by legacy dual-core hardware. On modern bare-metal servers, throughput is expected to exceed 50k+ TPS.*
 
+---
 
 ## Architecture
 The system is organized as a Cargo Workspace with modular crates:
@@ -61,6 +66,8 @@ The system is organized as a Cargo Workspace with modular crates:
 ### The Actor Model
 Velocity uses `tokio::sync::mpsc` channels to funnel concurrent requests into a single-threaded **MarketProcessor**. This eliminates the need for complex Mutex locking on the orderbook, ensuring deterministic execution and reducing thread contention.
 
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -73,7 +80,7 @@ The server starts both the gRPC Trading Engine (port 50051) and WebSocket Market
     # Run in release mode for best performance
     cargo run --release -p api-server
 
-## 2. Run the CLI Client
+### 2. Run the CLI Client
 Open a new terminal to interact with the engine.   
 
     # Check Orderbook Depth
@@ -85,7 +92,7 @@ Open a new terminal to interact with the engine.
     # Place a Buy Order (Taker - Matches immediately)
     cargo run -p trading-cli -- buy --price 100 --quantity 10 --user-id 2 --order-id 2001    
 
-## 3. Connect to WebSocket
+### 3. Connect to WebSocket
 You can use any WebSocket client (like browser extensions or wscat) to listen to live market data.
 
 * URL: ws://127.0.0.1:3000/ws
