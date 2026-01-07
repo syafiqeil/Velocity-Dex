@@ -1,3 +1,5 @@
+// crates/bench-tool/src/main.rs
+
 use clap::Parser;
 use rand::Rng;
 use std::sync::Arc;

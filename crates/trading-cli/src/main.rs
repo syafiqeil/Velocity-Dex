@@ -18,7 +18,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    // Menaruh Limit Order (Buy)
     Buy {
         #[arg(short, long)]
         price: u64,
@@ -29,7 +28,6 @@ enum Commands {
         #[arg(long, default_value_t = 0)] // Jika 0, generate random
         order_id: u64,
     },
-    // Menaruh Limit Order (Sell)
     Sell {
         #[arg(short, long)]
         price: u64,
@@ -40,14 +38,12 @@ enum Commands {
         #[arg(long, default_value_t = 0)]
         order_id: u64,
     },
-    // Membatalkan Order
     Cancel {
         #[arg(short, long)]
         order_id: u64,
         #[arg(short, long, default_value_t = 1)]
         user_id: u64,
     },
-    // Melihat Orderbook (Depth)
     Depth {
         #[arg(short, long, default_value_t = 10)]
         limit: u32,
@@ -58,7 +54,7 @@ enum Commands {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    // Koneksi ke gRPC Server (Pastikan server jalan di terminal lain)
+    // Koneksi ke gRPC Server 
     let mut client = TradingEngineClient::connect("http://[::1]:50051").await?;
 
     match cli.command {
@@ -113,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             println!("\n=== ORDER BOOK (Top {}) ===", limit);
             println!("ASKS (Jual):");
-            // Kita balik urutan asks agar harga termahal di atas (visualisasi standar)
+            // Balik urutan asks agar harga termahal di atas 
             for level in inner.asks.iter().rev() {
                 println!("  Price: {:>6} | Qty: {:>6}", level.price, level.total_quantity);
             }

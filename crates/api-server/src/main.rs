@@ -86,7 +86,6 @@ impl TradingEngine for TradingService {
                     }
                 }
                 EngineEvent::OrderCancelled { .. } => {
-                    // Handle jika perlu (misal STP)
                 }
                 _ => {}
             }
@@ -124,7 +123,7 @@ impl TradingEngine for TradingService {
 
         Ok(Response::new(CancelOrderResponse {
             success,
-            remaining_qty: 0, // Opsional: bisa diimprovisasi untuk return sisa qty
+            remaining_qty: 0,
         }))
     }
 
@@ -163,7 +162,7 @@ impl TradingEngine for TradingService {
         Ok(Response::new(DepthResponse {
             bids: proto_bids,
             asks: proto_asks,
-            sequence_id: 0, // TODO: Implement sequence number nanti
+            sequence_id: 0, 
         }))
     }
 }

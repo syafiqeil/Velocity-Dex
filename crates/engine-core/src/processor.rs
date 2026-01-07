@@ -4,12 +4,11 @@ use tokio::sync::{mpsc, broadcast};
 use crate::{OrderBook, Side, EngineEvent, OrderLevel, LogEntry};
 use crate::wal::WalHandler; 
 
-// Command yang bisa dikirim oleh API ke Engine
 #[derive(Debug)]
 pub enum Command {
     PlaceOrder {
         user_id: u64,
-        order_id: u64, // Pre-generated ID
+        order_id: u64, 
         side: Side,
         price: u64,
         quantity: u64,
@@ -29,8 +28,8 @@ pub enum Command {
 }
 
 pub struct MarketProcessor {
-    book: OrderBook, // The Engine Core (Sync)
-    receiver: mpsc::Receiver<Command>, // Inbox
+    book: OrderBook, 
+    receiver: mpsc::Receiver<Command>,
     wal: WalHandler,
     pub event_broadcaster: broadcast::Sender<EngineEvent>,
 }
@@ -39,7 +38,7 @@ impl MarketProcessor {
     pub fn new(receiver: mpsc::Receiver<Command>, broadcaster: broadcast::Sender<EngineEvent>) -> Self {
         let wal_path = "velocity.wal";
         
-        // 1. RECOVERY PHASE
+        // 1. Recovery Phase
         println!("Recovering state from WAL...");
         let mut book = OrderBook::new();
         
@@ -78,42 +77,40 @@ impl MarketProcessor {
         while let Some(cmd) = self.receiver.recv().await {
             match cmd {
                 Command::PlaceOrder { user_id, order_id, side, price, quantity, responder } => {
-                    // 1. (WAL) PERSISTENCE FIRST (Write-Ahead)
+                    // 1. (WAL) Persistence First (Write-Ahead)
                     let log_entry = LogEntry::Place { order_id, user_id, side, price, quantity };
                     
                     if let Err(e) = self.wal.write_entry(&log_entry) {
                         eprintln!("CRITICAL: Failed to write to WAL: {}", e);
-                        // Di sistem enterprise, sebaiknya panic atau stop processing di sini
-                        // agar memori dan disk tidak desync.
                     }
 
-                    // 2. MEMORY EXECUTION
+                    // 2. Mmemory Execution
                     let events = self.book.place_limit_order(order_id, user_id, side, price, quantity);
 
-                    // 3. BROADCAST (Pub/Sub) 
-                    // Kita kirim copy event ke semua subscriber WebSocket
+                    // 3. Broadcast (Pub/Sub) 
+                    // Kirim copy event ke semua subscriber WebSocket
                     for event in &events {
                         // Hanya broadcast event publik (Trade). Private info (OrderPlaced) opsional.
-                        // Di sini kita broadcast semuanya agar dashboard terlihat hidup.
+                        // Di sini broadcast semuanya agar dashboard terlihat hidup
                         let _ = self.event_broadcaster.send(event.clone());
                     }
 
-                    // 4. RESPOND (gRPC)
+                    // 4. Respond (gRPC)
                     let _ = responder.send(events);
                 }
                 
                 Command::CancelOrder { user_id, order_id, responder } => {
-                    // 1. PERSISTENCE FIRST
+                    // 1. Persistence First
                     let log_entry = LogEntry::Cancel { order_id, user_id };
                     
                     if let Err(e) = self.wal.write_entry(&log_entry) {
                         eprintln!("CRITICAL: Failed to write to WAL: {}", e);
                     }
 
-                    // 2. MEMORY EXECUTION
+                    // 2. Memory Execution
                     let events = self.book.cancel_order(order_id, user_id);
                     
-                    // BROADCAST CANCEL
+                    // Broadcast Cancel
                     for event in &events {
                         let _ = self.event_broadcaster.send(event.clone());
                     }

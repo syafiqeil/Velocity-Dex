@@ -29,9 +29,9 @@ impl WalHandler {
         bincode::serialize_into(&mut self.writer, entry)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-        // Untuk HFT murni, biasanya flush dilakukan per batch atau interval waktu.
-        // Pada tahap ini, flush setiap kali demi keamanan data.
-        // self.writer.flush()?;
+        // Untuk HFT murni, biasanya flush dilakukan per batch atau interval waktu
+        // Pada skala seperti ini, flush setiap kali demi keamanan data
+        self.writer.flush()?;
 
         Ok(())
     }

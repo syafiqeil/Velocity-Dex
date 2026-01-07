@@ -11,7 +11,7 @@ service TradingEngine {
   // 2. Cancel Order
   rpc CancelOrder (CancelOrderRequest) returns (CancelOrderResponse);
 
-  // 3. Get Orderbook Depth (Snapshot)
+  // 3. Get Orderbook Depth 
   // Mengambil state pasar saat ini (Top N Bids/Asks)
   rpc GetOrderBookDepth (DepthRequest) returns (DepthResponse);
 }
